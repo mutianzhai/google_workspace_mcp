@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 GMAIL_BATCH_SIZE = 25
 GMAIL_REQUEST_DELAY = 0.1
 HTML_BODY_TRUNCATE_LIMIT = 20000
+RAW_CONTENT_PREVIEW_LIMIT = 200
 
 
 def _extract_message_body(payload):
@@ -797,7 +798,7 @@ def _format_thread_content(thread_data: dict, thread_id: str, format: str = "ful
     if not messages:
         return f"No messages found in thread '{thread_id}'."
 
-    # Handle minimal format - only return message IDs (skip threadId as per requirement)
+    # Handle minimal format - only return message IDs (threadId is included in the Thread ID header)
     if format == "minimal":
         content_lines = [
             f"Thread ID: {thread_id}",
@@ -826,7 +827,7 @@ def _format_thread_content(thread_data: dict, thread_id: str, format: str = "ful
                 f"=== Message {i} ===",
                 f"Message ID: {message_id}",
                 f"Raw (Base64url encoded RFC 2822):",
-                raw_content[:200] + ("..." if len(raw_content) > 200 else ""),
+                raw_content[:RAW_CONTENT_PREVIEW_LIMIT] + ("..." if len(raw_content) > RAW_CONTENT_PREVIEW_LIMIT else ""),
                 "",
             ])
         return "\n".join(content_lines)
@@ -941,9 +942,10 @@ async def get_gmail_thread_content(
     Args:
         thread_id (str): The unique ID of the Gmail thread to retrieve.
         user_google_email (str): The user's Google email address. Required.
-        format (str): Message format. Options: "minimal" (id/threadId only),
-            "metadata" (headers/labels/snippet), "full" (complete message with body - default),
-            "raw" (RFC 2822 format).
+        format (str): Message format. Options: "minimal" (returns thread info and message IDs),
+            "metadata" (returns headers, labels, and snippet without body),
+            "full" (returns complete message with body - default),
+            "raw" (returns RFC 2822 format as Base64url encoded string).
 
     Returns:
         str: The complete thread content with all messages formatted for reading.
@@ -979,9 +981,10 @@ async def get_gmail_threads_content_batch(
     Args:
         thread_ids (List[str]): A list of Gmail thread IDs to retrieve. The function will automatically batch requests in chunks of 25.
         user_google_email (str): The user's Google email address. Required.
-        format (str): Message format. Options: "minimal" (id/threadId only),
-            "metadata" (headers/labels/snippet), "full" (complete message with body - default),
-            "raw" (RFC 2822 format).
+        format (str): Message format. Options: "minimal" (returns thread info and message IDs),
+            "metadata" (returns headers, labels, and snippet without body),
+            "full" (returns complete message with body - default),
+            "raw" (returns RFC 2822 format as Base64url encoded string).
 
     Returns:
         str: A formatted list of thread contents with separators.
