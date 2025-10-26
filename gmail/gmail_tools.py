@@ -781,23 +781,57 @@ async def draft_gmail_message(
     return f"Draft created! Draft ID: {draft_id}"
 
 
-def _format_thread_content(thread_data: dict, thread_id: str) -> str:
+def _format_thread_content(thread_data: dict, thread_id: str, format: str = "full") -> str:
     """
     Helper function to format thread content from Gmail API response.
 
     Args:
         thread_data (dict): Thread data from Gmail API
         thread_id (str): Thread ID for display
+        format (str): Message format - "minimal", "metadata", "full", or "raw"
 
     Returns:
-        str: Formatted thread content
+        str: Formatted thread content based on the specified format
     """
     messages = thread_data.get("messages", [])
     if not messages:
         return f"No messages found in thread '{thread_id}'."
 
-    # Extract thread subject from the first message
+    # Handle minimal format - only return message IDs (skip threadId as per requirement)
+    if format == "minimal":
+        content_lines = [
+            f"Thread ID: {thread_id}",
+            f"Messages: {len(messages)}",
+            "",
+        ]
+        for i, message in enumerate(messages, 1):
+            message_id = message.get("id", "unknown")
+            content_lines.append(f"  {i}. Message ID: {message_id}")
+        return "\n".join(content_lines)
+
+    # For other formats, extract thread subject from the first message
     first_message = messages[0]
+    
+    # Handle raw format
+    if format == "raw":
+        content_lines = [
+            f"Thread ID: {thread_id}",
+            f"Messages: {len(messages)}",
+            "",
+        ]
+        for i, message in enumerate(messages, 1):
+            message_id = message.get("id", "unknown")
+            raw_content = message.get("raw", "[No raw content available]")
+            content_lines.extend([
+                f"=== Message {i} ===",
+                f"Message ID: {message_id}",
+                f"Raw (Base64url encoded RFC 2822):",
+                raw_content[:200] + ("..." if len(raw_content) > 200 else ""),
+                "",
+            ])
+        return "\n".join(content_lines)
+
+    # For metadata and full formats, extract headers
     first_headers = {
         h["name"]: h["value"]
         for h in first_message.get("payload", {}).get("headers", [])
@@ -814,7 +848,9 @@ def _format_thread_content(thread_data: dict, thread_id: str) -> str:
 
     # Process each message in the thread
     for i, message in enumerate(messages, 1):
-        # Extract headers
+        message_id = message.get("id", "unknown")
+        
+        # Extract headers for metadata and full formats
         headers = {
             h["name"]: h["value"] for h in message.get("payload", {}).get("headers", [])
         }
@@ -823,19 +859,11 @@ def _format_thread_content(thread_data: dict, thread_id: str) -> str:
         date = headers.get("Date", "(unknown date)")
         subject = headers.get("Subject", "(no subject)")
 
-        # Extract both text and HTML bodies
-        payload = message.get("payload", {})
-        bodies = _extract_message_bodies(payload)
-        text_body = bodies.get("text", "")
-        html_body = bodies.get("html", "")
-
-        # Format body content with HTML fallback
-        body_data = _format_body_content(text_body, html_body)
-
-        # Add message to content
+        # Add message header info
         content_lines.extend(
             [
                 f"=== Message {i} ===",
+                f"Message ID: {message_id}",
                 f"From: {sender}",
                 f"Date: {date}",
             ]
@@ -845,13 +873,38 @@ def _format_thread_content(thread_data: dict, thread_id: str) -> str:
         if subject != thread_subject:
             content_lines.append(f"Subject: {subject}")
 
-        content_lines.extend(
-            [
-                "",
-                body_data,
-                "",
-            ]
-        )
+        # Handle metadata format - include labels and snippet
+        if format == "metadata":
+            label_ids = message.get("labelIds", [])
+            snippet = message.get("snippet", "")
+            size_estimate = message.get("sizeEstimate", 0)
+            
+            if label_ids:
+                content_lines.append(f"Labels: {', '.join(label_ids)}")
+            if snippet:
+                content_lines.append(f"Snippet: {snippet}")
+            if size_estimate:
+                content_lines.append(f"Size: {size_estimate} bytes")
+            content_lines.append("")
+        
+        # Handle full format - include body
+        elif format == "full":
+            # Extract both text and HTML bodies
+            payload = message.get("payload", {})
+            bodies = _extract_message_bodies(payload)
+            text_body = bodies.get("text", "")
+            html_body = bodies.get("html", "")
+
+            # Format body content with HTML fallback
+            body_data = _format_body_content(text_body, html_body)
+
+            content_lines.extend(
+                [
+                    "",
+                    body_data,
+                    "",
+                ]
+            )
 
     return "\n".join(content_lines)
 
@@ -907,7 +960,7 @@ async def get_gmail_thread_content(
         service.users().threads().get(userId="me", id=thread_id, format=normalized_format).execute
     )
 
-    return _format_thread_content(thread_response, thread_id)
+    return _format_thread_content(thread_response, thread_id, normalized_format)
 
 
 @server.tool()
@@ -1017,7 +1070,7 @@ async def get_gmail_threads_content_batch(
                     output_threads.append(f"⚠️ Thread {tid}: No data returned\n")
                     continue
 
-                output_threads.append(_format_thread_content(thread, tid))
+                output_threads.append(_format_thread_content(thread, tid, normalized_format))
 
     # Combine all threads with separators
     header = f"Retrieved {len(thread_ids)} threads:"
