@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 GMAIL_BATCH_SIZE = 25
 GMAIL_REQUEST_DELAY = 0.1
 HTML_BODY_TRUNCATE_LIMIT = 20000
-RAW_CONTENT_PREVIEW_LIMIT = 200
 
 
 def _extract_message_body(payload):
@@ -789,7 +788,7 @@ def _format_thread_content(thread_data: dict, thread_id: str, format: str = "ful
     Args:
         thread_data (dict): Thread data from Gmail API
         thread_id (str): Thread ID for display
-        format (str): Message format - "minimal", "metadata", "full", or "raw"
+        format (str): Message format - "minimal", "metadata", or "full"
 
     Returns:
         str: Formatted thread content based on the specified format
@@ -812,25 +811,6 @@ def _format_thread_content(thread_data: dict, thread_id: str, format: str = "ful
 
     # For other formats, extract thread subject from the first message
     first_message = messages[0]
-    
-    # Handle raw format
-    if format == "raw":
-        content_lines = [
-            f"Thread ID: {thread_id}",
-            f"Messages: {len(messages)}",
-            "",
-        ]
-        for i, message in enumerate(messages, 1):
-            message_id = message.get("id", "unknown")
-            raw_content = message.get("raw", "[No raw content available]")
-            content_lines.extend([
-                f"=== Message {i} ===",
-                f"Message ID: {message_id}",
-                f"Raw (Base64url encoded RFC 2822):",
-                raw_content[:RAW_CONTENT_PREVIEW_LIMIT] + ("..." if len(raw_content) > RAW_CONTENT_PREVIEW_LIMIT else ""),
-                "",
-            ])
-        return "\n".join(content_lines)
 
     # For metadata and full formats, extract headers
     first_headers = {
@@ -920,7 +900,7 @@ def _validate_format_parameter(format: str) -> str:
     Returns:
         str: The normalized format value (lowercase) or "full" if invalid
     """
-    valid_formats = ["minimal", "metadata", "full", "raw"]
+    valid_formats = ["minimal", "metadata", "full"]
     if not format or not isinstance(format, str):
         return "full"
     normalized_format = format.lower()
@@ -944,8 +924,7 @@ async def get_gmail_thread_content(
         user_google_email (str): The user's Google email address. Required.
         format (str): Message format. Options: "minimal" (returns thread info and message IDs),
             "metadata" (returns headers, labels, and snippet without body),
-            "full" (returns complete message with body - default),
-            "raw" (returns RFC 2822 format as Base64url encoded string).
+            "full" (returns complete message with body - default).
 
     Returns:
         str: The complete thread content with all messages formatted for reading.
@@ -983,8 +962,7 @@ async def get_gmail_threads_content_batch(
         user_google_email (str): The user's Google email address. Required.
         format (str): Message format. Options: "minimal" (returns thread info and message IDs),
             "metadata" (returns headers, labels, and snippet without body),
-            "full" (returns complete message with body - default),
-            "raw" (returns RFC 2822 format as Base64url encoded string).
+            "full" (returns complete message with body - default).
 
     Returns:
         str: A formatted list of thread contents with separators.

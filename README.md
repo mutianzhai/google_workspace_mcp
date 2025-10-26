@@ -733,7 +733,6 @@ Both `get_gmail_thread_content` and `get_gmail_threads_content_batch` support an
 | `"minimal"` | Returns only the `id` and `threadId` of each message. |
 | `"metadata"` | Returns message metadata such as headers, labels, and snippet, but *not* the full body. |
 | `"full"` | Returns the full email message data, including headers and body (Base64 encoded). This is the default and most commonly used for reading messages. |
-| `"raw"` | Returns the entire email message in RFC 2822 format as a Base64url encoded string. Useful if you need to parse the raw MIME yourself. |
 
 </td>
 <td width="50%" valign="top">
