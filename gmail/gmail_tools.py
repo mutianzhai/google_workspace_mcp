@@ -856,11 +856,31 @@ def _format_thread_content(thread_data: dict, thread_id: str) -> str:
     return "\n".join(content_lines)
 
 
+def _validate_format_parameter(format: str) -> str:
+    """
+    Validate and normalize the format parameter for Gmail API calls.
+    
+    Args:
+        format (str): The format parameter to validate
+    
+    Returns:
+        str: The normalized format value (lowercase) or "full" if invalid
+    """
+    valid_formats = ["minimal", "metadata", "full", "raw"]
+    if not format or not isinstance(format, str):
+        return "full"
+    normalized_format = format.lower()
+    if normalized_format not in valid_formats:
+        logger.warning(f"Invalid format '{format}' provided, defaulting to 'full'")
+        normalized_format = "full"
+    return normalized_format
+
+
 @server.tool()
 @require_google_service("gmail", "gmail_read")
 @handle_http_errors("get_gmail_thread_content", is_read_only=True, service_type="gmail")
 async def get_gmail_thread_content(
-    service, thread_id: str, user_google_email: str
+    service, thread_id: str, user_google_email: str, format: str = "full"
 ) -> str:
     """
     Retrieves the complete content of a Gmail conversation thread, including all messages.
@@ -868,17 +888,23 @@ async def get_gmail_thread_content(
     Args:
         thread_id (str): The unique ID of the Gmail thread to retrieve.
         user_google_email (str): The user's Google email address. Required.
+        format (str): Message format. Options: "minimal" (id/threadId only),
+            "metadata" (headers/labels/snippet), "full" (complete message with body - default),
+            "raw" (RFC 2822 format).
 
     Returns:
         str: The complete thread content with all messages formatted for reading.
     """
     logger.info(
-        f"[get_gmail_thread_content] Invoked. Thread ID: '{thread_id}', Email: '{user_google_email}'"
+        f"[get_gmail_thread_content] Invoked. Thread ID: '{thread_id}', Email: '{user_google_email}', Format: '{format}'"
     )
+
+    # Validate and normalize format parameter
+    normalized_format = _validate_format_parameter(format)
 
     # Fetch the complete thread with all messages
     thread_response = await asyncio.to_thread(
-        service.users().threads().get(userId="me", id=thread_id, format="full").execute
+        service.users().threads().get(userId="me", id=thread_id, format=normalized_format).execute
     )
 
     return _format_thread_content(thread_response, thread_id)
@@ -891,6 +917,7 @@ async def get_gmail_threads_content_batch(
     service,
     thread_ids: List[str],
     user_google_email: str,
+    format: str = "full",
 ) -> str:
     """
     Retrieves the content of multiple Gmail threads in a single batch request.
@@ -899,13 +926,19 @@ async def get_gmail_threads_content_batch(
     Args:
         thread_ids (List[str]): A list of Gmail thread IDs to retrieve. The function will automatically batch requests in chunks of 25.
         user_google_email (str): The user's Google email address. Required.
+        format (str): Message format. Options: "minimal" (id/threadId only),
+            "metadata" (headers/labels/snippet), "full" (complete message with body - default),
+            "raw" (RFC 2822 format).
 
     Returns:
         str: A formatted list of thread contents with separators.
     """
     logger.info(
-        f"[get_gmail_threads_content_batch] Invoked. Thread count: {len(thread_ids)}, Email: '{user_google_email}'"
+        f"[get_gmail_threads_content_batch] Invoked. Thread count: {len(thread_ids)}, Email: '{user_google_email}', Format: '{format}'"
     )
+
+    # Validate and normalize format parameter
+    normalized_format = _validate_format_parameter(format)
 
     if not thread_ids:
         raise ValueError("No thread IDs provided")
@@ -926,7 +959,7 @@ async def get_gmail_threads_content_batch(
             batch = service.new_batch_http_request(callback=_batch_callback)
 
             for tid in chunk_ids:
-                req = service.users().threads().get(userId="me", id=tid, format="full")
+                req = service.users().threads().get(userId="me", id=tid, format=normalized_format)
                 batch.add(req, request_id=tid)
 
             # Execute batch request
@@ -945,7 +978,7 @@ async def get_gmail_threads_content_batch(
                         thread = await asyncio.to_thread(
                             service.users()
                             .threads()
-                            .get(userId="me", id=tid, format="full")
+                            .get(userId="me", id=tid, format=normalized_format)
                             .execute
                         )
                         return tid, thread, None
