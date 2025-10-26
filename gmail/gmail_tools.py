@@ -867,7 +867,9 @@ def _validate_format_parameter(format: str) -> str:
         str: The normalized format value (lowercase) or "full" if invalid
     """
     valid_formats = ["minimal", "metadata", "full", "raw"]
-    normalized_format = format.lower() if format else "full"
+    if not format or not isinstance(format, str):
+        return "full"
+    normalized_format = format.lower()
     if normalized_format not in valid_formats:
         logger.warning(f"Invalid format '{format}' provided, defaulting to 'full'")
         normalized_format = "full"
