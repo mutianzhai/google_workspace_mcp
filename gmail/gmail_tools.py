@@ -856,6 +856,24 @@ def _format_thread_content(thread_data: dict, thread_id: str) -> str:
     return "\n".join(content_lines)
 
 
+def _validate_format_parameter(format: str) -> str:
+    """
+    Validate and normalize the format parameter for Gmail API calls.
+    
+    Args:
+        format (str): The format parameter to validate
+    
+    Returns:
+        str: The normalized format value (lowercase) or "full" if invalid
+    """
+    valid_formats = ["minimal", "metadata", "full", "raw"]
+    normalized_format = format.lower() if format else "full"
+    if normalized_format not in valid_formats:
+        logger.warning(f"Invalid format '{format}' provided, defaulting to 'full'")
+        normalized_format = "full"
+    return normalized_format
+
+
 @server.tool()
 @require_google_service("gmail", "gmail_read")
 @handle_http_errors("get_gmail_thread_content", is_read_only=True, service_type="gmail")
@@ -868,8 +886,9 @@ async def get_gmail_thread_content(
     Args:
         thread_id (str): The unique ID of the Gmail thread to retrieve.
         user_google_email (str): The user's Google email address. Required.
-        format (str): Message format. Options: "minimal" (id/threadId only), "metadata" (headers/labels/snippet), 
-                      "full" (complete message with body - default), "raw" (RFC 2822 format).
+        format (str): Message format. Options: "minimal" (id/threadId only),
+            "metadata" (headers/labels/snippet), "full" (complete message with body - default),
+            "raw" (RFC 2822 format).
 
     Returns:
         str: The complete thread content with all messages formatted for reading.
@@ -879,11 +898,7 @@ async def get_gmail_thread_content(
     )
 
     # Validate and normalize format parameter
-    valid_formats = ["minimal", "metadata", "full", "raw"]
-    normalized_format = format.lower() if format else "full"
-    if normalized_format not in valid_formats:
-        logger.warning(f"Invalid format '{format}' provided, defaulting to 'full'")
-        normalized_format = "full"
+    normalized_format = _validate_format_parameter(format)
 
     # Fetch the complete thread with all messages
     thread_response = await asyncio.to_thread(
@@ -909,8 +924,9 @@ async def get_gmail_threads_content_batch(
     Args:
         thread_ids (List[str]): A list of Gmail thread IDs to retrieve. The function will automatically batch requests in chunks of 25.
         user_google_email (str): The user's Google email address. Required.
-        format (str): Message format. Options: "minimal" (id/threadId only), "metadata" (headers/labels/snippet), 
-                      "full" (complete message with body - default), "raw" (RFC 2822 format).
+        format (str): Message format. Options: "minimal" (id/threadId only),
+            "metadata" (headers/labels/snippet), "full" (complete message with body - default),
+            "raw" (RFC 2822 format).
 
     Returns:
         str: A formatted list of thread contents with separators.
@@ -920,11 +936,7 @@ async def get_gmail_threads_content_batch(
     )
 
     # Validate and normalize format parameter
-    valid_formats = ["minimal", "metadata", "full", "raw"]
-    normalized_format = format.lower() if format else "full"
-    if normalized_format not in valid_formats:
-        logger.warning(f"Invalid format '{format}' provided, defaulting to 'full'")
-        normalized_format = "full"
+    normalized_format = _validate_format_parameter(format)
 
     if not thread_ids:
         raise ValueError("No thread IDs provided")
