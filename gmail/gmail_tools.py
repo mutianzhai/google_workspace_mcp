@@ -1285,3 +1285,208 @@ async def batch_modify_gmail_message_labels(
         actions.append(f"Removed labels: {', '.join(remove_label_ids)}")
 
     return f"Labels updated for {len(message_ids)} messages: {'; '.join(actions)}"
+
+
+@server.tool()
+@handle_http_errors("modify_gmail_thread_labels", service_type="gmail")
+@require_google_service("gmail", GMAIL_MODIFY_SCOPE)
+async def modify_gmail_thread_labels(
+    service,
+    user_google_email: str,
+    thread_id: str,
+    add_label_ids: List[str] = Field(default=[], description="Label IDs to add to all messages in the thread."),
+    remove_label_ids: List[str] = Field(default=[], description="Label IDs to remove from all messages in the thread."),
+) -> str:
+    """
+    Adds or removes labels from all messages in a Gmail thread.
+    This applies the same label changes to every message within the specified thread.
+    To archive all messages in a thread, remove the INBOX label.
+    To delete all messages in a thread, add the TRASH label.
+
+    Args:
+        user_google_email (str): The user's Google email address. Required.
+        thread_id (str): The ID of the thread whose messages should be modified.
+        add_label_ids (Optional[List[str]]): List of label IDs to add to all messages in the thread.
+        remove_label_ids (Optional[List[str]]): List of label IDs to remove from all messages in the thread.
+
+    Returns:
+        str: Confirmation message of the label changes applied to all messages in the thread.
+    """
+    logger.info(
+        f"[modify_gmail_thread_labels] Invoked. Email: '{user_google_email}', Thread ID: '{thread_id}'"
+    )
+
+    if not add_label_ids and not remove_label_ids:
+        raise Exception(
+            "At least one of add_label_ids or remove_label_ids must be provided."
+        )
+
+    # Fetch the thread to get all message IDs
+    thread_response = await asyncio.to_thread(
+        service.users().threads().get(userId="me", id=thread_id, format="minimal").execute
+    )
+
+    messages = thread_response.get("messages", [])
+    if not messages:
+        return f"No messages found in thread '{thread_id}'."
+
+    message_ids = [msg["id"] for msg in messages]
+
+    # Use the batch modify functionality to update all messages in the thread
+    body = {"ids": message_ids}
+    if add_label_ids:
+        body["addLabelIds"] = add_label_ids
+    if remove_label_ids:
+        body["removeLabelIds"] = remove_label_ids
+
+    await asyncio.to_thread(
+        service.users().messages().batchModify(userId="me", body=body).execute
+    )
+
+    actions = []
+    if add_label_ids:
+        actions.append(f"Added labels: {', '.join(add_label_ids)}")
+    if remove_label_ids:
+        actions.append(f"Removed labels: {', '.join(remove_label_ids)}")
+
+    return f"Labels updated for all {len(message_ids)} messages in thread {thread_id}: {'; '.join(actions)}"
+
+
+@server.tool()
+@handle_http_errors("batch_modify_gmail_thread_labels", service_type="gmail")
+@require_google_service("gmail", GMAIL_MODIFY_SCOPE)
+async def batch_modify_gmail_thread_labels(
+    service,
+    user_google_email: str,
+    thread_ids: List[str],
+    add_label_ids: List[str] = Field(default=[], description="Label IDs to add to all messages in the threads."),
+    remove_label_ids: List[str] = Field(default=[], description="Label IDs to remove from all messages in the threads."),
+) -> str:
+    """
+    Adds or removes labels from all messages in multiple Gmail threads.
+    This applies the same label changes to every message within all specified threads.
+
+    Args:
+        user_google_email (str): The user's Google email address. Required.
+        thread_ids (List[str]): A list of thread IDs whose messages should be modified.
+        add_label_ids (Optional[List[str]]): List of label IDs to add to all messages in the threads.
+        remove_label_ids (Optional[List[str]]): List of label IDs to remove from all messages in the threads.
+
+    Returns:
+        str: Confirmation message of the label changes applied to all messages in the threads.
+    """
+    logger.info(
+        f"[batch_modify_gmail_thread_labels] Invoked. Email: '{user_google_email}', Thread IDs: '{thread_ids}'"
+    )
+
+    if not add_label_ids and not remove_label_ids:
+        raise Exception(
+            "At least one of add_label_ids or remove_label_ids must be provided."
+        )
+
+    if not thread_ids:
+        raise ValueError("No thread IDs provided")
+
+    # Collect all message IDs from all threads
+    all_message_ids = []
+    thread_message_counts = {}
+
+    # Process threads in chunks to prevent SSL connection exhaustion
+    for chunk_start in range(0, len(thread_ids), GMAIL_BATCH_SIZE):
+        chunk_ids = thread_ids[chunk_start : chunk_start + GMAIL_BATCH_SIZE]
+        results: Dict[str, Dict] = {}
+
+        def _batch_callback(request_id, response, exception):
+            """Callback for batch requests"""
+            results[request_id] = {"data": response, "error": exception}
+
+        # Try to use batch API to fetch threads
+        try:
+            batch = service.new_batch_http_request(callback=_batch_callback)
+
+            for tid in chunk_ids:
+                req = service.users().threads().get(userId="me", id=tid, format="minimal")
+                batch.add(req, request_id=tid)
+
+            # Execute batch request
+            await asyncio.to_thread(batch.execute)
+
+        except Exception as batch_error:
+            # Fallback to sequential processing
+            logger.warning(
+                f"[batch_modify_gmail_thread_labels] Batch API failed, falling back to sequential processing: {batch_error}"
+            )
+
+            async def fetch_thread_with_retry(tid: str, max_retries: int = 3):
+                """Fetch a single thread with exponential backoff retry for SSL errors"""
+                for attempt in range(max_retries):
+                    try:
+                        thread = await asyncio.to_thread(
+                            service.users()
+                            .threads()
+                            .get(userId="me", id=tid, format="minimal")
+                            .execute
+                        )
+                        return tid, thread, None
+                    except ssl.SSLError as ssl_error:
+                        if attempt < max_retries - 1:
+                            delay = 2 ** attempt
+                            logger.warning(
+                                f"[batch_modify_gmail_thread_labels] SSL error for thread {tid} on attempt {attempt + 1}: {ssl_error}. Retrying in {delay}s..."
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            logger.error(
+                                f"[batch_modify_gmail_thread_labels] SSL error for thread {tid} on final attempt: {ssl_error}"
+                            )
+                            return tid, None, ssl_error
+                    except Exception as e:
+                        return tid, None, e
+
+            # Process threads sequentially with small delays to prevent connection exhaustion
+            for tid in chunk_ids:
+                tid_result, thread_data, error = await fetch_thread_with_retry(tid)
+                results[tid_result] = {"data": thread_data, "error": error}
+                # Brief delay between requests to allow connection cleanup
+                await asyncio.sleep(GMAIL_REQUEST_DELAY)
+
+        # Process results for this chunk
+        for tid in chunk_ids:
+            entry = results.get(tid, {"data": None, "error": "No result"})
+
+            if entry["error"]:
+                logger.warning(f"[batch_modify_gmail_thread_labels] Error fetching thread {tid}: {entry['error']}")
+                continue
+
+            thread = entry["data"]
+            if not thread:
+                logger.warning(f"[batch_modify_gmail_thread_labels] No data returned for thread {tid}")
+                continue
+
+            messages = thread.get("messages", [])
+            if messages:
+                message_ids = [msg["id"] for msg in messages]
+                all_message_ids.extend(message_ids)
+                thread_message_counts[tid] = len(message_ids)
+
+    if not all_message_ids:
+        return "No messages found in the specified threads."
+
+    # Use the batch modify functionality to update all messages
+    body = {"ids": all_message_ids}
+    if add_label_ids:
+        body["addLabelIds"] = add_label_ids
+    if remove_label_ids:
+        body["removeLabelIds"] = remove_label_ids
+
+    await asyncio.to_thread(
+        service.users().messages().batchModify(userId="me", body=body).execute
+    )
+
+    actions = []
+    if add_label_ids:
+        actions.append(f"Added labels: {', '.join(add_label_ids)}")
+    if remove_label_ids:
+        actions.append(f"Removed labels: {', '.join(remove_label_ids)}")
+
+    return f"Labels updated for {len(all_message_ids)} messages across {len(thread_message_counts)} threads: {'; '.join(actions)}"
