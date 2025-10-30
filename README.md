@@ -717,11 +717,13 @@ cp .env.oauth21 .env
 | `send_gmail_message` | **Core** | Send emails |
 | `get_gmail_thread_content` | Extended | Get full thread content |
 | `modify_gmail_message_labels` | Extended | Modify message labels |
+| `modify_gmail_thread_labels` | Extended | Modify labels for all messages in a thread |
 | `list_gmail_labels` | Extended | List available labels |
 | `manage_gmail_label` | Extended | Create/update/delete labels |
 | `draft_gmail_message` | Extended | Create drafts |
 | `get_gmail_threads_content_batch` | Complete | Batch retrieve thread content |
 | `batch_modify_gmail_message_labels` | Complete | Batch modify labels |
+| `batch_modify_gmail_thread_labels` | Complete | Batch modify labels for all messages in threads |
 | `start_google_auth` | Complete | Initialize authentication |
 
 **Gmail Message Format Options:**
