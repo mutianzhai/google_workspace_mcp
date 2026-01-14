@@ -353,7 +353,7 @@ async def start_auth_flow(
             state=oauth_state,
         )
 
-        auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
+        auth_url, _ = flow.authorization_url(access_type="offline")
 
         session_id = None
         try:
@@ -486,16 +486,41 @@ def handle_auth_callback(
         user_google_email = user_info["email"]
         logger.info(f"Identified user_google_email: {user_google_email}")
 
-        # Save the credentials
+        # Preserve existing refresh token if new credentials don't have one
+        # Google often doesn't return refresh_token on re-authorization if one already exists
+        existing_credentials = None
         credential_store = get_credential_store()
+        try:
+            existing_credentials = credential_store.get_credential(user_google_email)
+        except Exception as e:
+            logger.debug(f"Could not load existing credentials to preserve refresh token: {e}")
+
+        # Also check OAuth21SessionStore for existing refresh token
+        store = get_oauth21_session_store()
+        existing_session_creds = store.get_credentials(user_google_email)
+
+        # Preserve refresh token from existing credentials if new one is missing
+        preserved_refresh_token = credentials.refresh_token
+        if not preserved_refresh_token:
+            if existing_credentials and existing_credentials.refresh_token:
+                preserved_refresh_token = existing_credentials.refresh_token
+                logger.info(f"Preserved existing refresh token from credential store for {user_google_email}")
+            elif existing_session_creds and existing_session_creds.refresh_token:
+                preserved_refresh_token = existing_session_creds.refresh_token
+                logger.info(f"Preserved existing refresh token from session store for {user_google_email}")
+
+        # Update credentials object with preserved refresh token if we found one
+        if preserved_refresh_token and not credentials.refresh_token:
+            credentials.refresh_token = preserved_refresh_token
+
+        # Save the credentials
         credential_store.store_credential(user_google_email, credentials)
 
         # Always save to OAuth21SessionStore for centralized management
-        store = get_oauth21_session_store()
         store.store_session(
             user_email=user_google_email,
             access_token=credentials.token,
-            refresh_token=credentials.refresh_token,
+            refresh_token=preserved_refresh_token or credentials.refresh_token,
             token_uri=credentials.token_uri,
             client_id=credentials.client_id,
             client_secret=credentials.client_secret,
@@ -505,9 +530,8 @@ def handle_auth_callback(
             issuer="https://accounts.google.com"  # Add issuer for Google tokens
         )
 
-        # If session_id is provided, also save to session cache for compatibility
-        if session_id:
-            save_credentials_to_session(session_id, credentials)
+        # Note: No need to call save_credentials_to_session() here as we've already
+        # saved to the OAuth21SessionStore above with the correct issuer and mcp_session_id
 
         return user_google_email, credentials
 
@@ -570,6 +594,9 @@ def get_credentials(
                                 user_email=user_email,
                                 access_token=credentials.token,
                                 refresh_token=credentials.refresh_token,
+                                token_uri=credentials.token_uri,
+                                client_id=credentials.client_id,
+                                client_secret=credentials.client_secret,
                                 scopes=credentials.scopes,
                                 expiry=credentials.expiry,
                                 mcp_session_id=session_id

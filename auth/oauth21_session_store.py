@@ -311,10 +311,19 @@ class OAuth21SessionStore:
             issuer: Token issuer (e.g., "https://accounts.google.com")
         """
         with self._lock:
+            # Preserve existing refresh token if new one is not provided
+            # This prevents losing refresh tokens during re-authorization flows
+            preserved_refresh_token = refresh_token
+            if not preserved_refresh_token:
+                existing_session = self._sessions.get(user_email)
+                if existing_session and existing_session.get("refresh_token"):
+                    preserved_refresh_token = existing_session["refresh_token"]
+                    logger.info(f"Preserved existing refresh token for {user_email} in session store")
+
             normalized_expiry = _normalize_expiry_to_naive_utc(expiry)
             session_info = {
                 "access_token": access_token,
-                "refresh_token": refresh_token,
+                "refresh_token": preserved_refresh_token,
                 "token_uri": token_uri,
                 "client_id": client_id,
                 "client_secret": client_secret,

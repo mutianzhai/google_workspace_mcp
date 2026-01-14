@@ -716,12 +716,14 @@ cp .env.oauth21 .env
 | `get_gmail_messages_content_batch` | **Core** | Batch retrieve message content |
 | `send_gmail_message` | **Core** | Send emails |
 | `get_gmail_thread_content` | Extended | Get full thread content |
+| `get_gmail_thread_metadata` | Extended | Get thread metadata (headers, labels, snippet) |
 | `modify_gmail_message_labels` | Extended | Modify message labels |
 | `modify_gmail_thread_labels` | Extended | Modify labels for all messages in a thread |
 | `list_gmail_labels` | Extended | List available labels |
 | `manage_gmail_label` | Extended | Create/update/delete labels |
 | `draft_gmail_message` | Extended | Create drafts |
 | `get_gmail_threads_content_batch` | Complete | Batch retrieve thread content |
+| `get_gmail_threads_metadata_batch` | Complete | Batch retrieve thread metadata |
 | `batch_modify_gmail_message_labels` | Complete | Batch modify labels |
 | `batch_modify_gmail_thread_labels` | Complete | Batch modify labels for all messages in threads |
 | `start_google_auth` | Complete | Initialize authentication |
@@ -735,6 +737,12 @@ Both `get_gmail_thread_content` and `get_gmail_threads_content_batch` support an
 | `"minimal"` | Returns only the `id` and `threadId` of each message. |
 | `"metadata"` | Returns message metadata such as headers, labels, and snippet, but *not* the full body. |
 | `"full"` | Returns the full email message data, including headers and body (Base64 encoded). This is the default and most commonly used for reading messages. |
+
+**Convenience Metadata Functions:**
+
+For quick access to metadata only, use the dedicated metadata functions:
+- `get_gmail_thread_metadata` - Equivalent to `get_gmail_thread_content` with `format="metadata"`
+- `get_gmail_threads_metadata_batch` - Equivalent to `get_gmail_threads_content_batch` with `format="metadata"`
 
 </td>
 <td width="50%" valign="top">

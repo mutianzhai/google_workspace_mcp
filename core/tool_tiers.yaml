@@ -7,6 +7,7 @@ gmail:
 
   extended:
     - get_gmail_thread_content
+    - get_gmail_thread_metadata
     - modify_gmail_message_labels
     - modify_gmail_thread_labels
     - list_gmail_labels
@@ -15,6 +16,7 @@ gmail:
 
   complete:
     - get_gmail_threads_content_batch
+    - get_gmail_threads_metadata_batch
     - batch_modify_gmail_message_labels
     - batch_modify_gmail_thread_labels
     - start_google_auth

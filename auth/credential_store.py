@@ -151,9 +151,21 @@ class LocalDirectoryCredentialStore(CredentialStore):
         """Store credentials to local JSON file."""
         creds_path = self._get_credential_path(user_email)
 
+        # Preserve existing refresh token if new credentials don't have one
+        # This prevents losing refresh tokens during re-authorization flows
+        refresh_token_to_store = credentials.refresh_token
+        if not refresh_token_to_store:
+            try:
+                existing_creds = self.get_credential(user_email)
+                if existing_creds and existing_creds.refresh_token:
+                    refresh_token_to_store = existing_creds.refresh_token
+                    logger.info(f"Preserved existing refresh token for {user_email} in credential store")
+            except Exception as e:
+                logger.debug(f"Could not check existing credentials to preserve refresh token: {e}")
+
         creds_data = {
             "token": credentials.token,
-            "refresh_token": credentials.refresh_token,
+            "refresh_token": refresh_token_to_store,
             "token_uri": credentials.token_uri,
             "client_id": credentials.client_id,
             "client_secret": credentials.client_secret,
